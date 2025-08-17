@@ -1,4 +1,3 @@
-
 const state = {
   text: [
     `WELCOME TO THE CANVAS TERMINAL`
@@ -25,7 +24,7 @@ export function renderTerminalToOffscreen(
   ctx.fillStyle = 'black'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-  const textHeight = 16
+  const textHeight = 24
   const lineSpacing = textHeight * .5;
   ctx.font = `${textHeight}px monospace`
   ctx.fillStyle = '#0F0'

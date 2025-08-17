@@ -117,7 +117,7 @@ void main()
 
     // smoothed interval for which the glitch gets triggered
     float glitchAmount = SS(DURATION * .001, DURATION * AMT, mod(t, DURATION));
-	float displayNoise = 0.;
+  	float displayNoise = 0.;
     vec3 col = vec3(0.);
     vec2 eps = vec2(5. / u_resolution.x, 0.);
     vec2 st = vec2(0.);
@@ -135,6 +135,33 @@ void main()
     col.r += texture2D(u_texture, st + eps + distortion).r;
     col.g += texture2D(u_texture, st).g;
     col.b += texture2D(u_texture, st - eps - distortion).b;
+
+    // bloom/glow effect with fixed radial sampling pattern
+    vec3 bloom = vec3(0.0);
+    float bloomRadius = 3.0 / u_resolution.x;
+
+    // Define fixed radial offsets for smooth circular bloom
+    vec2 offsets[13];
+    offsets[0] = vec2(0.0, 0.0); // center
+    offsets[1] = vec2(1.0, 0.0); offsets[2] = vec2(0.707, 0.707); offsets[3] = vec2(0.0, 1.0); offsets[4] = vec2(-0.707, 0.707);
+    offsets[5] = vec2(-1.0, 0.0); offsets[6] = vec2(-0.707, -0.707); offsets[7] = vec2(0.0, -1.0); offsets[8] = vec2(0.707, -0.707);
+    offsets[9] = vec2(1.5, 0.0); offsets[10] = vec2(0.0, 1.5); offsets[11] = vec2(-1.5, 0.0); offsets[12] = vec2(0.0, -1.5);
+
+    for(int i = 0; i < 13; i++) {
+        vec2 offset = offsets[i] * bloomRadius;
+        float dist = length(offset);
+        float weight = exp(-dist * dist * 3.0);
+        vec3 sample = texture2D(u_texture, st + offset).rgb;
+
+        // Enhance green channel for terminal glow
+        sample.g *= 1.3;
+        bloom += sample * weight;
+    }
+
+    bloom *= 0.15; // Adjust bloom intensity
+
+    // Add bloom to original color
+    col += bloom;
 
     // white noise + scanlines
     displayNoise = 0.2 * clamp(displayNoise, 0., 1.);
