@@ -32,6 +32,8 @@ varying vec2 v_texCoord;
 uniform sampler2D u_texture;
 uniform float u_time;
 uniform vec2 u_resolution;
+uniform float u_warpStrength;
+uniform float u_vignetteStrength;
 
 // modified version of https://www.shadertoy.com/view/wld3WN
 // amount of seconds for which the glitch loop occurs
@@ -98,21 +100,38 @@ float gnoise01(vec3 x)
 }
 
 // warp uvs for the crt effect
-vec2 crt(vec2 uv)
+vec2 crt(vec2 uv, float warpStrength)
 {
-    float tht  = atan(uv.y, uv.x);
-    float r = length(uv);
-    // curve without distorting the center
-    r /= (1. - .1 * r * r);
-    uv.x = r * cos(tht);
-    uv.y = r * sin(tht);
-    return .5 * (uv + 1.);
+    // Convert to centered coordinates (-1 to 1)
+    vec2 centeredUV = uv * 2.0 - 1.0;
+
+    float tht = atan(centeredUV.y, centeredUV.x);
+    float r = length(centeredUV);
+
+    // Apply barrel distortion with configurable strength
+    r /= (1.0 - warpStrength * r * r);
+
+    centeredUV.x = r * cos(tht);
+    centeredUV.y = r * sin(tht);
+
+    // Convert back to 0-1 range
+    return (centeredUV + 1.0) * 0.5;
 }
 
 void main()
 {
     vec2 fragCoord = v_texCoord * u_resolution;
     vec2 uv = fragCoord / u_resolution;
+
+    // Apply CRT warping effect
+    uv = crt(uv, u_warpStrength);
+
+    // Check if warped UV is outside bounds - simulate CRT bezel
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
+
     float t = u_time;
 
     // smoothed interval for which the glitch gets triggered
@@ -163,6 +182,12 @@ void main()
     // Add bloom to original color
     col += bloom;
 
+    // Apply vignette effect
+    vec2 vignetteUV = v_texCoord * 2.0 - 1.0;
+    float vignette = 1.0 - dot(vignetteUV, vignetteUV) * u_vignetteStrength;
+    vignette = clamp(vignette, 0.0, 1.0);
+    col *= vignette;
+
     // white noise + scanlines
     displayNoise = 0.2 * clamp(displayNoise, 0., 1.);
     col += (.15 + .65 * glitchAmount) * (hash33(vec3(fragCoord, mod(t * 60., 1000.))).r) * displayNoise;
@@ -211,6 +236,8 @@ const texCoordAttributeLocation = gl.getAttribLocation(program, 'a_texCoord')
 const textureUniformLocation = gl.getUniformLocation(program, 'u_texture')
 const timeUniformLocation = gl.getUniformLocation(program, 'u_time')
 const resolutionUniformLocation = gl.getUniformLocation(program, 'u_resolution')
+const warpStrengthUniformLocation = gl.getUniformLocation(program, 'u_warpStrength')
+const vignetteStrengthUniformLocation = gl.getUniformLocation(program, 'u_vignetteStrength')
 
 // Create buffers
 const positionBuffer = gl.createBuffer()
@@ -236,6 +263,10 @@ const texCoords = [
   1, 0
 ]
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW)
+
+// CRT effect parameters - adjust these to control the warping
+const CRT_WARP_STRENGTH = 0.04 // Controls barrel distortion strength (0.0 = no warp, 0.3 = strong warp)
+const CRT_VIGNETTE_STRENGTH = 0.1 // Controls edge darkening (0.0 = no vignette, 1.0 = strong vignette)
 
 // Create texture
 const texture = gl.createTexture()
@@ -289,6 +320,8 @@ function draw() {
   gl.uniform1i(textureUniformLocation, 0)
   gl.uniform1f(timeUniformLocation, performance.now() * 0.001)
   gl.uniform2f(resolutionUniformLocation, webglCanvas.width, webglCanvas.height)
+  gl.uniform1f(warpStrengthUniformLocation, CRT_WARP_STRENGTH)
+  gl.uniform1f(vignetteStrengthUniformLocation, CRT_VIGNETTE_STRENGTH)
 
   // Draw
   gl.drawArrays(gl.TRIANGLES, 0, 6)

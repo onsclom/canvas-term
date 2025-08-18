@@ -21,13 +21,13 @@ export function renderTerminalToOffscreen(
   canvas.height = canvasRect.height * window.devicePixelRatio
   ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
 
-  ctx.fillStyle = 'black'
+  ctx.fillStyle = `#020202`
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
   const textHeight = 24
   const lineSpacing = textHeight * .5;
   ctx.font = `${textHeight}px monospace`
-  ctx.fillStyle = '#0F0'
+  ctx.fillStyle = '#2F2'
   ctx.textAlign = 'left'
   ctx.textBaseline = 'top'
   const charWidth = ctx.measureText(' ').width;
