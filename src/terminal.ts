@@ -117,6 +117,11 @@ export function renderTerminalToOffscreen(
 }
 
 window.onkeydown = (event: KeyboardEvent) => {
+  // Don't process input if modifier keys are pressed (hotkeys like cmd+"+")
+  if (event.ctrlKey || event.metaKey || event.altKey) {
+    return;
+  }
+
   if (event.key === 'Enter') {
     state.text.push(
       `${promptMarker}${state.prompt} ` // Echo the prompt
