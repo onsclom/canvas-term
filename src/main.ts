@@ -1,6 +1,22 @@
 import './style.css'
 import { renderTerminalToOffscreen } from './terminal'
 
+const THEMES = [
+  [0.0, 1.0, 0.0],    // Green
+  [1.0, 0.75, 0.0],   // Amber
+  [0.3, 0.7, 1.0],    // Blue
+  [1.0, 0.2, 0.2],    // Red
+  [1.0, 1.0, 1.0],    // White
+  [0.0, 1.0, 1.0]     // Cyan
+]
+let currentThemeIndex = 0
+export function nextTheme() {
+  currentThemeIndex = (currentThemeIndex + 1) % THEMES.length
+}
+
+function assert(condition: boolean): asserts condition {
+}
+
 export const offscreenCanvas = new OffscreenCanvas(0, 0)
 export const offscreenCtx = offscreenCanvas.getContext('2d')!
 
@@ -8,7 +24,6 @@ export const offscreenCtx = offscreenCanvas.getContext('2d')!
 const webglCanvas = document.createElement('canvas')
 document.body.appendChild(webglCanvas)
 const gl = webglCanvas.getContext('webgl2') || webglCanvas.getContext('webgl')
-
 if (!gl) {
   throw new Error('WebGL not supported')
 }
@@ -63,25 +78,32 @@ varying vec2 v_texCoord;
 uniform sampler2D u_texture;
 uniform vec2 u_direction;
 uniform vec2 u_resolution;
+uniform float u_radius;
 
 void main() {
   vec2 texelSize = 1.0 / u_resolution;
   vec4 color = vec4(0.0);
 
-  // Gaussian weights for 9-tap blur
-  float weights[5];
-  weights[0] = 0.227027;
-  weights[1] = 0.1945946;
-  weights[2] = 0.1216216;
-  weights[3] = 0.054054;
-  weights[4] = 0.016216;
+  // Gaussian weights for 21-tap blur (much larger radius)
+  float weights[11];
+  weights[0] = 0.05299;
+  weights[1] = 0.05268;
+  weights[2] = 0.05175;
+  weights[3] = 0.05020;
+  weights[4] = 0.04810;
+  weights[5] = 0.04551;
+  weights[6] = 0.04252;
+  weights[7] = 0.03924;
+  weights[8] = 0.03576;
+  weights[9] = 0.03220;
+  weights[10] = 0.02867;
 
   // Sample center
   color += texture2D(u_texture, v_texCoord) * weights[0];
 
-  // Sample both directions
-  for(int i = 1; i < 5; i++) {
-    vec2 offset = u_direction * texelSize * float(i);
+  // Sample both directions with increased radius
+  for(int i = 1; i < 11; i++) {
+    vec2 offset = u_direction * texelSize * float(i) * u_radius;
     color += texture2D(u_texture, v_texCoord + offset) * weights[i];
     color += texture2D(u_texture, v_texCoord - offset) * weights[i];
   }
@@ -99,12 +121,21 @@ uniform sampler2D u_bloom1;
 uniform sampler2D u_bloom2;
 uniform sampler2D u_bloom3;
 uniform float u_bloomIntensity;
+uniform vec3 u_tintColor;
 
 void main() {
   vec4 original = texture2D(u_original, v_texCoord);
   vec4 bloom1 = texture2D(u_bloom1, v_texCoord);
   vec4 bloom2 = texture2D(u_bloom2, v_texCoord);
   vec4 bloom3 = texture2D(u_bloom3, v_texCoord);
+
+  // Apply tint to original (multiply white text by tint color)
+  original.rgb *= u_tintColor;
+
+  // Apply tint to bloom as well
+  bloom1.rgb *= u_tintColor;
+  bloom2.rgb *= u_tintColor;
+  bloom3.rgb *= u_tintColor;
 
   vec4 bloom = (bloom1 + bloom2 + bloom3) * u_bloomIntensity;
   gl_FragColor = original + bloom;
@@ -172,12 +203,6 @@ const brightPassProgram = createProgram(gl, vertexShader, createShader(gl, gl.FR
 const blurProgram = createProgram(gl, vertexShader, createShader(gl, gl.FRAGMENT_SHADER, blurFragmentShaderSource))
 const combineProgram = createProgram(gl, vertexShader, createShader(gl, gl.FRAGMENT_SHADER, combineFragmentShaderSource))
 
-// Get all uniform and attribute locations
-const baseUniforms = {
-  texture: gl.getUniformLocation(baseProgram, 'u_texture')!,
-  flipY: gl.getUniformLocation(baseProgram, 'u_flipY')!
-}
-
 const brightPassUniforms = {
   texture: gl.getUniformLocation(brightPassProgram, 'u_texture')!,
   threshold: gl.getUniformLocation(brightPassProgram, 'u_threshold')!,
@@ -188,6 +213,7 @@ const blurUniforms = {
   texture: gl.getUniformLocation(blurProgram, 'u_texture')!,
   direction: gl.getUniformLocation(blurProgram, 'u_direction')!,
   resolution: gl.getUniformLocation(blurProgram, 'u_resolution')!,
+  radius: gl.getUniformLocation(blurProgram, 'u_radius')!,
   flipY: gl.getUniformLocation(blurProgram, 'u_flipY')!
 }
 
@@ -197,6 +223,7 @@ const combineUniforms = {
   bloom2: gl.getUniformLocation(combineProgram, 'u_bloom2')!,
   bloom3: gl.getUniformLocation(combineProgram, 'u_bloom3')!,
   bloomIntensity: gl.getUniformLocation(combineProgram, 'u_bloomIntensity')!,
+  tintColor: gl.getUniformLocation(combineProgram, 'u_tintColor')!,
   flipY: gl.getUniformLocation(combineProgram, 'u_flipY')!
 }
 
@@ -230,9 +257,10 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW)
 
 // Bloom configuration
 const bloomConfig = {
-  threshold: 0.8,
-  intensity: 1.5,
-  scales: [1.0, 0.5, 0.25, 0.125] // Different blur scales
+  threshold: 0.9,
+  intensity: .6,
+  radius: 2.5,
+  scales: [1.0, 0.8, 0.6, 0.5, 0.4] // More passes at higher resolutions
 }
 
 // WebGL resources for bloom pipeline
@@ -249,6 +277,7 @@ let bloomResources: {
 } | null = null
 
 function setupBloomResources(width: number, height: number) {
+  assert(gl !== null)
   if (bloomResources && bloomResources.width === width && bloomResources.height === height) {
     return bloomResources
   }
@@ -311,6 +340,7 @@ function setupBloomResources(width: number, height: number) {
 }
 
 function setupVertexAttributes() {
+  assert(gl !== null)
   // Set up position attribute
   gl.enableVertexAttribArray(positionAttributeLocation)
   gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer)
@@ -323,11 +353,19 @@ function setupVertexAttributes() {
 }
 
 function renderFullscreenQuad() {
+  assert(gl !== null)
   setupVertexAttributes()
   gl.drawArrays(gl.TRIANGLES, 0, 6)
 }
 
 function draw() {
+  // Set up WebGL canvas size
+  const canvasRect = webglCanvas.getBoundingClientRect()
+  const displayWidth = Math.floor(canvasRect.width * window.devicePixelRatio)
+  const displayHeight = Math.floor(canvasRect.height * window.devicePixelRatio)
+  webglCanvas.width = displayWidth
+  webglCanvas.height = displayHeight
+
   // Render terminal to offscreen canvas
   renderTerminalToOffscreen(
     offscreenCanvas,
@@ -335,13 +373,6 @@ function draw() {
     webglCanvas
   )
 
-  // Set up WebGL canvas size
-  const canvasRect = webglCanvas.getBoundingClientRect()
-  const displayWidth = Math.floor(canvasRect.width * window.devicePixelRatio)
-  const displayHeight = Math.floor(canvasRect.height * window.devicePixelRatio)
-
-  webglCanvas.width = displayWidth
-  webglCanvas.height = displayHeight
 
   if (!gl) {
     throw new Error('WebGL context not available')
@@ -382,12 +413,14 @@ function draw() {
     gl.clearColor(0, 0, 0, 1)
     gl.clear(gl.COLOR_BUFFER_BIT)
 
+    const radiusScale = Math.max(0.3, scale)
     gl.useProgram(blurProgram)
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, currentTexture)
     gl.uniform1i(blurUniforms.texture, 0)
     gl.uniform2f(blurUniforms.direction, 1.0, 0.0) // Horizontal
     gl.uniform2f(blurUniforms.resolution, scaledWidth, scaledHeight)
+    gl.uniform1f(blurUniforms.radius, bloomConfig.radius * radiusScale)
     gl.uniform1i(blurUniforms.flipY, 1)
     renderFullscreenQuad()
 
@@ -402,6 +435,7 @@ function draw() {
     gl.uniform1i(blurUniforms.texture, 0)
     gl.uniform2f(blurUniforms.direction, 0.0, 1.0) // Vertical
     gl.uniform2f(blurUniforms.resolution, scaledWidth, scaledHeight)
+    gl.uniform1f(blurUniforms.radius, bloomConfig.radius * radiusScale)
     gl.uniform1i(blurUniforms.flipY, 1)
     renderFullscreenQuad()
 
@@ -436,63 +470,12 @@ function draw() {
   gl.uniform1i(combineUniforms.bloom3, 3)
 
   gl.uniform1f(combineUniforms.bloomIntensity, bloomConfig.intensity)
+  const TERMINAL_TINT_COLOR = THEMES[currentThemeIndex % THEMES.length]
+  gl.uniform3f(combineUniforms.tintColor, TERMINAL_TINT_COLOR[0], TERMINAL_TINT_COLOR[1], TERMINAL_TINT_COLOR[2])
   gl.uniform1i(combineUniforms.flipY, 0)
   renderFullscreenQuad()
 
   requestAnimationFrame(draw)
 }
 
-// Handle resize
-function handleResize() {
-  const canvasRect = webglCanvas.getBoundingClientRect()
-  webglCanvas.style.width = `${canvasRect.width}px`
-  webglCanvas.style.height = `${canvasRect.height}px`
-}
-
-window.addEventListener('resize', handleResize)
-handleResize()
-
-// Add bloom controls (optional - for tweaking)
-const controls = document.createElement('div')
-controls.style.position = 'fixed'
-controls.style.top = '10px'
-controls.style.right = '10px'
-controls.style.background = 'rgba(0,0,0,0.8)'
-controls.style.color = 'white'
-controls.style.padding = '10px'
-controls.style.borderRadius = '5px'
-controls.style.fontFamily = 'monospace'
-controls.style.fontSize = '12px'
-controls.innerHTML = `
-  <div>Bloom Controls:</div>
-  <div>
-    <label>Threshold: </label>
-    <input type="range" id="threshold" min="0" max="1" step="0.01" value="${bloomConfig.threshold}">
-    <span id="thresholdValue">${bloomConfig.threshold}</span>
-  </div>
-  <div>
-    <label>Intensity: </label>
-    <input type="range" id="intensity" min="0" max="5" step="0.1" value="${bloomConfig.intensity}">
-    <span id="intensityValue">${bloomConfig.intensity}</span>
-  </div>
-`
-document.body.appendChild(controls)
-
-// Bloom control event listeners
-const thresholdSlider = document.getElementById('threshold') as HTMLInputElement
-const thresholdValue = document.getElementById('thresholdValue')!
-const intensitySlider = document.getElementById('intensity') as HTMLInputElement
-const intensityValue = document.getElementById('intensityValue')!
-
-thresholdSlider.addEventListener('input', (e) => {
-  bloomConfig.threshold = parseFloat((e.target as HTMLInputElement).value)
-  thresholdValue.textContent = bloomConfig.threshold.toString()
-})
-
-intensitySlider.addEventListener('input', (e) => {
-  bloomConfig.intensity = parseFloat((e.target as HTMLInputElement).value)
-  intensityValue.textContent = bloomConfig.intensity.toString()
-})
-
-// Start the render loop
 draw()

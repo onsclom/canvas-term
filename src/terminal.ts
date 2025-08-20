@@ -1,4 +1,5 @@
 import { playBootupSound } from "./bootup-sound"
+import { nextTheme } from "./main";
 import font from "./monogram.ttf"
 
 {
@@ -124,6 +125,9 @@ window.onkeydown = (event: KeyboardEvent) => {
 
     if (command === 'help') {
       state.text.push('[HELP TEXT HERE]');
+    }
+    else if (command === 'color' || command === 'c') {
+      nextTheme()
     }
     else if (command === 'clear') {
       state.text = [];
