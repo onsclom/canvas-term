@@ -19,7 +19,7 @@ const scanlineConfig = {
 
 // White noise configuration
 const noiseConfig = {
-  intensity: 0.07,        // How strong the noise is (0-1)
+  intensity: 0.12,        // How strong the noise is (0-1)
 }
 
 // Curved screen configuration
@@ -271,6 +271,8 @@ void main() {
   vec2 noiseCoord = floor(curvedCoord * u_resolution / u_noisePixelSize) * u_noisePixelSize / u_resolution;
   float noise = random(noiseCoord + u_time * 0.1) * 2.0 - 1.0;
   finalColor.rgb += noise * u_noiseIntensity;
+
+  finalColor.rgb *= u_tintColor;
 
   // Apply scanline effect using curved coordinates
   float scanlineY = curvedCoord.y * u_resolution.y * u_scanlineFrequency;
