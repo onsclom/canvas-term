@@ -1,4 +1,11 @@
 import { playBootupSound } from "./bootup-sound"
+import font from "./monogram.ttf"
+
+{
+  const fontFace = new FontFace('monogram', `url(${font})`);
+  await fontFace.load()
+  document.fonts.add(fontFace)
+}
 
 const loadTime = 2000
 
@@ -38,21 +45,25 @@ export function renderTerminalToOffscreen(
   canvas.height = canvasRect.height * window.devicePixelRatio
   ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
 
-  ctx.fillStyle = `#020202`
+
+  ctx.fillStyle = `#000000`
   ctx.fillRect(0, 0, canvas.width, canvas.height)
-  const textHeight = 24
-  const lineSpacing = textHeight * .5;
-  ctx.font = `${textHeight}px monospace`
-  ctx.fillStyle = '#2F2'
+  const textHeight = 16 * 3
+  const lineSpacing = -(textHeight / 4);
+  ctx.font = `${textHeight}px monogram`
+  ctx.fillStyle = '#FFFFFF'
   ctx.textAlign = 'left'
   ctx.textBaseline = 'top'
   const charWidth = ctx.measureText(' ').width;
 
+  const margin = textHeight * .5
+  ctx.translate(margin, margin)
+
   let cursorY = lineSpacing
-  const x = lineSpacing; // left padding
+  const x = 0;
 
   if (!state.focused) {
-    ctx.fillText(`focus to boot`, x, cursorY)
+    ctx.fillText(`click to start`, x, cursorY)
   }
   else if (state.loadTimer < loadTime) {
     state.loadTimer += dt
@@ -68,8 +79,8 @@ export function renderTerminalToOffscreen(
     const maxDotAmount = 3
     const dotAmount = Math.floor((state.loadTimer * .005) % (maxDotAmount + 1))
     const lines = [
+      `[${'='.repeat(equalSigns)}${' '.repeat(spaces)}] ${Math.round(loadProgress * 100)}%`,
       `booting${'.'.repeat(dotAmount)}`,
-      `[${'='.repeat(equalSigns)}${' '.repeat(spaces)}] ${Math.round(loadProgress * 100)}%`
     ]
 
     for (const line of lines) {
@@ -89,7 +100,17 @@ export function renderTerminalToOffscreen(
     }
     const promptLine = `${promptMarker}${state.prompt}`;
     ctx.fillText(promptLine, x, cursorY)
-    ctx.fillRect(x + charWidth * (promptLine.length), cursorY, charWidth, textHeight);
+
+    const cursorVerticalShrink = textHeight * .2;
+    const showCursor = Math.floor(performance.now() * (.003)) % 2 === 0;
+    if (showCursor) {
+      ctx.fillRect(
+        x + charWidth * (promptLine.length),
+        cursorY + cursorVerticalShrink * .5,
+        charWidth,
+        textHeight - cursorVerticalShrink
+      )
+    }
   }
 }
 
