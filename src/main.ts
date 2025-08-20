@@ -19,28 +19,34 @@ const scanlineConfig = {
 
 // White noise configuration
 const noiseConfig = {
-  intensity: 0.09,        // How strong the noise is (0-1)
+  intensity: 0.07,        // How strong the noise is (0-1)
 }
 
 // Curved screen configuration
 const curveConfig = {
   curvature: 0.075,         // How curved the screen is (0-1, 0 = flat)
-  vignetteStrength: 0.1,   // Darkness at edges (0-1)
-  vignetteSize: 0.8,       // Size of vignette effect (0-1)
-  screenScale: 0.95        // Scale factor for the curved content (0-1)
+  vignetteStrength: 0.3,   // Darkness at edges (0-1)
+  vignetteSize: 0.4,       // Size of vignette effect (0-1)
+  screenScale: 0.98,       // Scale factor for the curved content (0-1)
+  bezelColor: [0.4, 0.4, 0.4], // gray bezel color like old CRT monitors
+  shadowDepth: .5,        // Depth of shadows in crevices (0-1)
+  shadowWidth: 0.05,       // Width of shadow area around screen edge
+  textureIntensity: 0.15   // Intensity of bezel texture (0-1)
 }
 
 const THEMES = [
-  [0.0, 1.0, 0.0],    // Green
-  [1.0, 0.75, 0.0],   // Amber
-  [0.3, 0.7, 1.0],    // Blue
-  [1.0, 0.2, 0.2],    // Red
-  [1.0, 1.0, 1.0],    // White
-  [0.0, 1.0, 1.0]     // Cyan
+  { name: "green", color: [0.0, 1.0, 0.0] },
+  { name: "amber", color: [1.0, 0.75, 0.0] },
+  { name: "blue", color: [0.3, 0.7, 1.0] },
+  { name: "red", color: [1.0, 0.2, 0.2] },
+  { name: "white", color: [1.0, 1.0, 1.0] },
+  { name: "cyan", color: [0.0, 1.0, 1.0] }
 ]
+
 let currentThemeIndex = 0
 export function nextTheme() {
   currentThemeIndex = (currentThemeIndex + 1) % THEMES.length
+  return THEMES[currentThemeIndex]
 }
 
 function assert(condition: boolean): asserts condition {
@@ -161,10 +167,51 @@ uniform float u_curvature;
 uniform float u_vignetteStrength;
 uniform float u_vignetteSize;
 uniform float u_screenScale;
+uniform vec3 u_bezelColor;
+uniform float u_shadowDepth;
+uniform float u_shadowWidth;
+uniform float u_textureIntensity;
 
 // Pseudo-random function for noise
 float random(vec2 st) {
   return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
+}
+
+// Generate bezel texture
+float bezelTexture(vec2 uv) {
+  // Create fine grain texture
+  float grain = random(floor(uv * 200.0)) * 0.5 + 0.5;
+
+  // Add some larger scale variation
+  float variation = random(floor(uv * 50.0)) * 0.3 + 0.7;
+
+  // Combine for plastic-like texture
+  return grain * variation;
+}
+
+// Calculate shadow based on distance from screen edge
+float calculateShadow(vec2 uv, vec2 curvedCoord) {
+  // Distance from screen edge
+  float edgeDistX = min(curvedCoord.x, 1.0 - curvedCoord.x);
+  float edgeDistY = min(curvedCoord.y, 1.0 - curvedCoord.y);
+  float edgeDist = min(edgeDistX, edgeDistY);
+
+  // Distance from original UV edge
+  float uvEdgeDistX = min(uv.x, 1.0 - uv.x);
+  float uvEdgeDistY = min(uv.y, 1.0 - uv.y);
+  float uvEdgeDist = min(uvEdgeDistX, uvEdgeDistY);
+
+  // Create shadow in crevice area
+  float shadowFactor = 1.0;
+  if (edgeDist < 0.0) {
+    // We're in the bezel area, check if we're near the screen edge
+    float distFromScreenEdge = -edgeDist;
+    if (distFromScreenEdge < u_shadowWidth) {
+      shadowFactor = mix(1.0 - u_shadowDepth, 1.0, distFromScreenEdge / u_shadowWidth);
+    }
+  }
+
+  return shadowFactor;
 }
 
 // Apply barrel distortion for curved screen effect
@@ -189,7 +236,18 @@ void main() {
 
   // Check if we're outside the curved screen bounds
   if (curvedCoord.x < 0.0 || curvedCoord.x > 1.0 || curvedCoord.y < 0.0 || curvedCoord.y > 1.0) {
-    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+    // We're in the bezel area - apply texture and shadows
+    vec3 bezelColor = u_bezelColor;
+
+    // Add texture to bezel
+    float texture = bezelTexture(v_texCoord);
+    bezelColor *= mix(1.0, texture, u_textureIntensity);
+
+    // Add shadow effects
+    float shadow = calculateShadow(v_texCoord, curvedCoord);
+    bezelColor *= shadow;
+
+    gl_FragColor = vec4(bezelColor, 1.0);
     return;
   }
 
@@ -326,7 +384,11 @@ const combineUniforms = {
   curvature: gl.getUniformLocation(combineProgram, 'u_curvature')!,
   vignetteStrength: gl.getUniformLocation(combineProgram, 'u_vignetteStrength')!,
   vignetteSize: gl.getUniformLocation(combineProgram, 'u_vignetteSize')!,
-  screenScale: gl.getUniformLocation(combineProgram, 'u_screenScale')!
+  screenScale: gl.getUniformLocation(combineProgram, 'u_screenScale')!,
+  bezelColor: gl.getUniformLocation(combineProgram, 'u_bezelColor')!,
+  shadowDepth: gl.getUniformLocation(combineProgram, 'u_shadowDepth')!,
+  shadowWidth: gl.getUniformLocation(combineProgram, 'u_shadowWidth')!,
+  textureIntensity: gl.getUniformLocation(combineProgram, 'u_textureIntensity')!
 }
 
 const positionAttributeLocation = gl.getAttribLocation(baseProgram, 'a_position')
@@ -564,7 +626,7 @@ function draw() {
   gl.uniform1i(combineUniforms.bloom3, 3)
 
   gl.uniform1f(combineUniforms.bloomIntensity, bloomConfig.intensity)
-  const TERMINAL_TINT_COLOR = THEMES[currentThemeIndex % THEMES.length]
+  const TERMINAL_TINT_COLOR = THEMES[currentThemeIndex % THEMES.length].color
   gl.uniform3f(combineUniforms.tintColor, TERMINAL_TINT_COLOR[0], TERMINAL_TINT_COLOR[1], TERMINAL_TINT_COLOR[2])
   gl.uniform1f(combineUniforms.scanlineIntensity, scanlineConfig.intensity)
   gl.uniform1f(combineUniforms.scanlineFrequency, scanlineConfig.frequency / (textHeight * devicePixelRatio / (48 * 2)))
@@ -576,6 +638,10 @@ function draw() {
   gl.uniform1f(combineUniforms.vignetteStrength, curveConfig.vignetteStrength)
   gl.uniform1f(combineUniforms.vignetteSize, curveConfig.vignetteSize)
   gl.uniform1f(combineUniforms.screenScale, curveConfig.screenScale)
+  gl.uniform3f(combineUniforms.bezelColor, curveConfig.bezelColor[0], curveConfig.bezelColor[1], curveConfig.bezelColor[2])
+  gl.uniform1f(combineUniforms.shadowDepth, curveConfig.shadowDepth)
+  gl.uniform1f(combineUniforms.shadowWidth, curveConfig.shadowWidth)
+  gl.uniform1f(combineUniforms.textureIntensity, curveConfig.textureIntensity)
   renderFullscreenQuad()
 
   requestAnimationFrame(draw)

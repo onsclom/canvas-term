@@ -128,7 +128,8 @@ window.onkeydown = (event: KeyboardEvent) => {
       state.text.push('[HELP TEXT HERE]');
     }
     else if (command === 'color' || command === 'c') {
-      nextTheme()
+      const theme = nextTheme()
+      state.text.push(`switched color to ${theme.name}`)
     }
     else if (command === 'clear') {
       state.text = [];
