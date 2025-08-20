@@ -19,7 +19,15 @@ const scanlineConfig = {
 
 // White noise configuration
 const noiseConfig = {
-  intensity: 0.075,        // How strong the noise is (0-1)
+  intensity: 0.09,        // How strong the noise is (0-1)
+}
+
+// Curved screen configuration
+const curveConfig = {
+  curvature: 0.075,         // How curved the screen is (0-1, 0 = flat)
+  vignetteStrength: 0.1,   // Darkness at edges (0-1)
+  vignetteSize: 0.8,       // Size of vignette effect (0-1)
+  screenScale: 0.95        // Scale factor for the curved content (0-1)
 }
 
 const THEMES = [
@@ -149,17 +157,46 @@ uniform float u_noiseIntensity;
 uniform float u_noisePixelSize;
 uniform float u_time;
 uniform vec2 u_resolution;
+uniform float u_curvature;
+uniform float u_vignetteStrength;
+uniform float u_vignetteSize;
+uniform float u_screenScale;
 
 // Pseudo-random function for noise
 float random(vec2 st) {
   return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
 }
 
+// Apply barrel distortion for curved screen effect
+vec2 curveScreen(vec2 uv) {
+  // Center the coordinates
+  uv = uv * 2.0 - 1.0;
+
+  // Apply barrel distortion
+  float r2 = dot(uv, uv);
+  float distortion = 1.0 + u_curvature * r2;
+  uv *= distortion;
+
+  // Scale and recenter
+  uv = (uv * u_screenScale + 1.0) * 0.5;
+
+  return uv;
+}
+
 void main() {
-  vec4 original = texture2D(u_original, v_texCoord);
-  vec4 bloom1 = texture2D(u_bloom1, v_texCoord);
-  vec4 bloom2 = texture2D(u_bloom2, v_texCoord);
-  vec4 bloom3 = texture2D(u_bloom3, v_texCoord);
+  // Apply curve distortion to texture coordinates
+  vec2 curvedCoord = curveScreen(v_texCoord);
+
+  // Check if we're outside the curved screen bounds
+  if (curvedCoord.x < 0.0 || curvedCoord.x > 1.0 || curvedCoord.y < 0.0 || curvedCoord.y > 1.0) {
+    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
+
+  vec4 original = texture2D(u_original, curvedCoord);
+  vec4 bloom1 = texture2D(u_bloom1, curvedCoord);
+  vec4 bloom2 = texture2D(u_bloom2, curvedCoord);
+  vec4 bloom3 = texture2D(u_bloom3, curvedCoord);
 
   // Apply tint to original (multiply white text by tint color)
   original.rgb *= u_tintColor;
@@ -173,20 +210,27 @@ void main() {
   vec4 finalColor = original + bloom;
 
   // Apply white noise before scanline effect
-  vec2 noiseCoord = floor(v_texCoord * u_resolution / u_noisePixelSize) * u_noisePixelSize / u_resolution;
+  vec2 noiseCoord = floor(curvedCoord * u_resolution / u_noisePixelSize) * u_noisePixelSize / u_resolution;
   float noise = random(noiseCoord + u_time * 0.1) * 2.0 - 1.0;
   finalColor.rgb += noise * u_noiseIntensity;
 
-  // Apply scanline effect
-  float scanlineY = v_texCoord.y * u_resolution.y * u_scanlineFrequency;
+  // Apply scanline effect using curved coordinates
+  float scanlineY = curvedCoord.y * u_resolution.y * u_scanlineFrequency;
   float scanline = sin(scanlineY + u_time) * 0.5 + 0.5;
   float scanlineFactor = 1.0 - (scanline * u_scanlineIntensity);
 
   // Apply subtle horizontal fade for more realistic CRT effect
-  float horizontalFade = sin(v_texCoord.y * 3.14159) * 0.1 + 0.9;
+  float horizontalFade = sin(curvedCoord.y * 3.14159) * 0.1 + 0.9;
   scanlineFactor *= horizontalFade;
 
   finalColor.rgb *= scanlineFactor;
+
+  // Apply vignette effect
+  vec2 vignetteCoord = v_texCoord * 2.0 - 1.0;
+  float vignette = 1.0 - smoothstep(u_vignetteSize, 1.0, length(vignetteCoord));
+  vignette = mix(1.0 - u_vignetteStrength, 1.0, vignette);
+  finalColor.rgb *= vignette;
+
   gl_FragColor = finalColor;
 }
 `
@@ -273,13 +317,16 @@ const combineUniforms = {
   bloom3: gl.getUniformLocation(combineProgram, 'u_bloom3')!,
   bloomIntensity: gl.getUniformLocation(combineProgram, 'u_bloomIntensity')!,
   tintColor: gl.getUniformLocation(combineProgram, 'u_tintColor')!,
-  flipY: gl.getUniformLocation(combineProgram, 'u_flipY')!,
   scanlineIntensity: gl.getUniformLocation(combineProgram, 'u_scanlineIntensity')!,
   scanlineFrequency: gl.getUniformLocation(combineProgram, 'u_scanlineFrequency')!,
   noiseIntensity: gl.getUniformLocation(combineProgram, 'u_noiseIntensity')!,
   noisePixelSize: gl.getUniformLocation(combineProgram, 'u_noisePixelSize')!,
   time: gl.getUniformLocation(combineProgram, 'u_time')!,
-  resolution: gl.getUniformLocation(combineProgram, 'u_resolution')!
+  resolution: gl.getUniformLocation(combineProgram, 'u_resolution')!,
+  curvature: gl.getUniformLocation(combineProgram, 'u_curvature')!,
+  vignetteStrength: gl.getUniformLocation(combineProgram, 'u_vignetteStrength')!,
+  vignetteSize: gl.getUniformLocation(combineProgram, 'u_vignetteSize')!,
+  screenScale: gl.getUniformLocation(combineProgram, 'u_screenScale')!
 }
 
 const positionAttributeLocation = gl.getAttribLocation(baseProgram, 'a_position')
@@ -525,7 +572,10 @@ function draw() {
   gl.uniform1f(combineUniforms.noisePixelSize, 6 * (textHeight * devicePixelRatio / (48 * 2)))
   gl.uniform1f(combineUniforms.time, performance.now() * 0.001 * scanlineConfig.speed + scanlineConfig.offset)
   gl.uniform2f(combineUniforms.resolution, displayWidth, displayHeight)
-  gl.uniform1i(combineUniforms.flipY, 0)
+  gl.uniform1f(combineUniforms.curvature, curveConfig.curvature)
+  gl.uniform1f(combineUniforms.vignetteStrength, curveConfig.vignetteStrength)
+  gl.uniform1f(combineUniforms.vignetteSize, curveConfig.vignetteSize)
+  gl.uniform1f(combineUniforms.screenScale, curveConfig.screenScale)
   renderFullscreenQuad()
 
   requestAnimationFrame(draw)
