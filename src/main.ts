@@ -17,6 +17,11 @@ const scanlineConfig = {
   offset: 0.5             // Phase offset
 }
 
+// White noise configuration
+const noiseConfig = {
+  intensity: 0.075,        // How strong the noise is (0-1)
+}
+
 const THEMES = [
   [0.0, 1.0, 0.0],    // Green
   [1.0, 0.75, 0.0],   // Amber
@@ -140,8 +145,15 @@ uniform float u_bloomIntensity;
 uniform vec3 u_tintColor;
 uniform float u_scanlineIntensity;
 uniform float u_scanlineFrequency;
+uniform float u_noiseIntensity;
+uniform float u_noisePixelSize;
 uniform float u_time;
 uniform vec2 u_resolution;
+
+// Pseudo-random function for noise
+float random(vec2 st) {
+  return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
+}
 
 void main() {
   vec4 original = texture2D(u_original, v_texCoord);
@@ -159,6 +171,11 @@ void main() {
 
   vec4 bloom = (bloom1 + bloom2 + bloom3) * u_bloomIntensity;
   vec4 finalColor = original + bloom;
+
+  // Apply white noise before scanline effect
+  vec2 noiseCoord = floor(v_texCoord * u_resolution / u_noisePixelSize) * u_noisePixelSize / u_resolution;
+  float noise = random(noiseCoord + u_time * 0.1) * 2.0 - 1.0;
+  finalColor.rgb += noise * u_noiseIntensity;
 
   // Apply scanline effect
   float scanlineY = v_texCoord.y * u_resolution.y * u_scanlineFrequency;
@@ -259,6 +276,8 @@ const combineUniforms = {
   flipY: gl.getUniformLocation(combineProgram, 'u_flipY')!,
   scanlineIntensity: gl.getUniformLocation(combineProgram, 'u_scanlineIntensity')!,
   scanlineFrequency: gl.getUniformLocation(combineProgram, 'u_scanlineFrequency')!,
+  noiseIntensity: gl.getUniformLocation(combineProgram, 'u_noiseIntensity')!,
+  noisePixelSize: gl.getUniformLocation(combineProgram, 'u_noisePixelSize')!,
   time: gl.getUniformLocation(combineProgram, 'u_time')!,
   resolution: gl.getUniformLocation(combineProgram, 'u_resolution')!
 }
@@ -502,6 +521,8 @@ function draw() {
   gl.uniform3f(combineUniforms.tintColor, TERMINAL_TINT_COLOR[0], TERMINAL_TINT_COLOR[1], TERMINAL_TINT_COLOR[2])
   gl.uniform1f(combineUniforms.scanlineIntensity, scanlineConfig.intensity)
   gl.uniform1f(combineUniforms.scanlineFrequency, scanlineConfig.frequency / (textHeight * devicePixelRatio / (48 * 2)))
+  gl.uniform1f(combineUniforms.noiseIntensity, noiseConfig.intensity)
+  gl.uniform1f(combineUniforms.noisePixelSize, 6 * (textHeight * devicePixelRatio / (48 * 2)))
   gl.uniform1f(combineUniforms.time, performance.now() * 0.001 * scanlineConfig.speed + scanlineConfig.offset)
   gl.uniform2f(combineUniforms.resolution, displayWidth, displayHeight)
   gl.uniform1i(combineUniforms.flipY, 0)

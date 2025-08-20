@@ -51,7 +51,7 @@ export function renderTerminalToOffscreen(
 
   ctx.fillStyle = `#000000`
   ctx.fillRect(0, 0, canvasRect.width, canvasRect.height)
-  const lineSpacing = 0;
+  const lineSpacing = -(textHeight / 8); // font has too much height
   ctx.font = `${textHeight}px monogram`
   ctx.fillStyle = '#FFFFFF'
   ctx.textAlign = 'left'
