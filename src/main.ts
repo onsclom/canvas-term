@@ -1,5 +1,21 @@
 import './style.css'
-import { renderTerminalToOffscreen } from './terminal'
+import { renderTerminalToOffscreen, textHeight } from './terminal'
+
+// Bloom configuration
+const bloomConfig = {
+  threshold: 0.9,
+  intensity: .6,
+  radius: 2.5,
+  scales: [1.0, 0.8, 0.6, 0.5, 0.4] // More passes at higher resolutions
+}
+
+// Scanline configuration
+const scanlineConfig = {
+  intensity: 0.7,        // How strong the scanlines are (0-1)
+  frequency: 1.0,         // Scanline frequency multiplier
+  speed: 2.0,             // Animation speed
+  offset: 0.5             // Phase offset
+}
 
 const THEMES = [
   [0.0, 1.0, 0.0],    // Green
@@ -122,6 +138,10 @@ uniform sampler2D u_bloom2;
 uniform sampler2D u_bloom3;
 uniform float u_bloomIntensity;
 uniform vec3 u_tintColor;
+uniform float u_scanlineIntensity;
+uniform float u_scanlineFrequency;
+uniform float u_time;
+uniform vec2 u_resolution;
 
 void main() {
   vec4 original = texture2D(u_original, v_texCoord);
@@ -138,7 +158,19 @@ void main() {
   bloom3.rgb *= u_tintColor;
 
   vec4 bloom = (bloom1 + bloom2 + bloom3) * u_bloomIntensity;
-  gl_FragColor = original + bloom;
+  vec4 finalColor = original + bloom;
+
+  // Apply scanline effect
+  float scanlineY = v_texCoord.y * u_resolution.y * u_scanlineFrequency;
+  float scanline = sin(scanlineY + u_time) * 0.5 + 0.5;
+  float scanlineFactor = 1.0 - (scanline * u_scanlineIntensity);
+
+  // Apply subtle horizontal fade for more realistic CRT effect
+  float horizontalFade = sin(v_texCoord.y * 3.14159) * 0.1 + 0.9;
+  scanlineFactor *= horizontalFade;
+
+  finalColor.rgb *= scanlineFactor;
+  gl_FragColor = finalColor;
 }
 `
 
@@ -224,7 +256,11 @@ const combineUniforms = {
   bloom3: gl.getUniformLocation(combineProgram, 'u_bloom3')!,
   bloomIntensity: gl.getUniformLocation(combineProgram, 'u_bloomIntensity')!,
   tintColor: gl.getUniformLocation(combineProgram, 'u_tintColor')!,
-  flipY: gl.getUniformLocation(combineProgram, 'u_flipY')!
+  flipY: gl.getUniformLocation(combineProgram, 'u_flipY')!,
+  scanlineIntensity: gl.getUniformLocation(combineProgram, 'u_scanlineIntensity')!,
+  scanlineFrequency: gl.getUniformLocation(combineProgram, 'u_scanlineFrequency')!,
+  time: gl.getUniformLocation(combineProgram, 'u_time')!,
+  resolution: gl.getUniformLocation(combineProgram, 'u_resolution')!
 }
 
 const positionAttributeLocation = gl.getAttribLocation(baseProgram, 'a_position')
@@ -254,14 +290,6 @@ const texCoords = [
   1, 0
 ]
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW)
-
-// Bloom configuration
-const bloomConfig = {
-  threshold: 0.9,
-  intensity: .6,
-  radius: 2.5,
-  scales: [1.0, 0.8, 0.6, 0.5, 0.4] // More passes at higher resolutions
-}
 
 // WebGL resources for bloom pipeline
 let bloomResources: {
@@ -472,6 +500,10 @@ function draw() {
   gl.uniform1f(combineUniforms.bloomIntensity, bloomConfig.intensity)
   const TERMINAL_TINT_COLOR = THEMES[currentThemeIndex % THEMES.length]
   gl.uniform3f(combineUniforms.tintColor, TERMINAL_TINT_COLOR[0], TERMINAL_TINT_COLOR[1], TERMINAL_TINT_COLOR[2])
+  gl.uniform1f(combineUniforms.scanlineIntensity, scanlineConfig.intensity)
+  gl.uniform1f(combineUniforms.scanlineFrequency, scanlineConfig.frequency / (textHeight * devicePixelRatio / (48 * 2)))
+  gl.uniform1f(combineUniforms.time, performance.now() * 0.001 * scanlineConfig.speed + scanlineConfig.offset)
+  gl.uniform2f(combineUniforms.resolution, displayWidth, displayHeight)
   gl.uniform1i(combineUniforms.flipY, 0)
   renderFullscreenQuad()
 

@@ -2,6 +2,8 @@ import { playBootupSound } from "./bootup-sound"
 import { nextTheme } from "./main";
 import font from "./monogram.ttf"
 
+export const textHeight = 16 * 3
+
 {
   const fontFace = new FontFace('monogram', `url(${font})`);
   await fontFace.load()
@@ -49,7 +51,6 @@ export function renderTerminalToOffscreen(
 
   ctx.fillStyle = `#000000`
   ctx.fillRect(0, 0, canvasRect.width, canvasRect.height)
-  const textHeight = 16 * 3
   const lineSpacing = 0;
   ctx.font = `${textHeight}px monogram`
   ctx.fillStyle = '#FFFFFF'
