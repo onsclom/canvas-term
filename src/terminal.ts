@@ -47,9 +47,9 @@ export function renderTerminalToOffscreen(
 
 
   ctx.fillStyle = `#000000`
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillRect(0, 0, canvasRect.width, canvasRect.height)
   const textHeight = 16 * 3
-  const lineSpacing = -(textHeight / 4);
+  const lineSpacing = 0;
   ctx.font = `${textHeight}px monogram`
   ctx.fillStyle = '#FFFFFF'
   ctx.textAlign = 'left'
